@@ -44,41 +44,62 @@ jobs:
             echo "new_release=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Verify release on kryfo.app/download
-        if: steps.check_release.outputs.new_release == 'true' && !inputs.skip_website_check
-        run: |
-          VERSION="${{ steps.check_release.outputs.version }}"
-          echo "Checking if version $VERSION is published on https://kryfo.app/download..."
-          DOWNLOAD_PAGE=$(curl -sSL https://kryfo.app/download)
-
-          if ! echo "$DOWNLOAD_PAGE" | grep -q "kryfo-${VERSION}-beta-linux-x64.tar.gz"; then
-            echo "::error::Version $VERSION is tagged on GitHub but not yet published on https://kryfo.app/download. Halting to ensure release is intended for users."
-            exit 1
-          fi
-          echo "Version $VERSION verified on kryfo.app/download."
-
-      - name: Fetch and verify SHA256SUMS-linux
+      - name: Dual-verify SHA256 checksum (GitHub Releases + kryfo.app)
         if: steps.check_release.outputs.new_release == 'true'
         run: |
           VERSION="${{ steps.check_release.outputs.version }}"
           TAG="${{ steps.check_release.outputs.tag }}"
           
+          echo "=== 1. Fetching SHA256SUMS-linux from GitHub Releases ==="
           SUMS_URL="https://github.com/GnosiWorks/Kryfo/releases/download/${TAG}/SHA256SUMS-linux"
-          echo "Fetching SHA256SUMS-linux from $SUMS_URL..."
-          
           CHECKSUMS_CONTENT=$(curl -sSL -f "$SUMS_URL" || true)
           if [ -z "$CHECKSUMS_CONTENT" ]; then
             echo "::error::Could not download SHA256SUMS-linux from $SUMS_URL. Failing build as required."
             exit 1
           fi
 
-          SHA256=$(echo "$CHECKSUMS_CONTENT" | grep "kryfo-.*-linux-x64.tar.gz" | awk '{print $1}')
-          if [ -z "$SHA256" ]; then
+          GITHUB_SHA256=$(echo "$CHECKSUMS_CONTENT" | grep "kryfo-.*-linux-x64.tar.gz" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
+          if [ -z "$GITHUB_SHA256" ]; then
             echo "::error::SHA256SUMS-linux does not contain checksum for linux-x64 tarball! Refusing to proceed with unverified hash."
             exit 1
           fi
+          echo "GitHub Release SHA256 : $GITHUB_SHA256"
 
-          echo "Verified official SHA256: $SHA256"
+          echo "=== 2. Fetching SHA256 from https://kryfo.app/download ==="
+          WEBSITE_SHA256=$(python3 -c '
+          import urllib.request, re, sys
+          try:
+              html = urllib.request.urlopen("https://kryfo.app/download", timeout=15).read().decode("utf-8")
+              version = sys.argv[1]
+              pattern = rf"kryfo-{re.escape(version)}[^\"]*linux-x64\.tar\.gz.*?<code>([a-fA-F0-9]{{64}})</code>"
+              m = re.search(pattern, html, re.DOTALL)
+              if m:
+                  print(m.group(1).lower())
+          except Exception as e:
+              sys.stderr.write(f"Error fetching from website: {e}\n")
+          ' "$VERSION")
+
+          if [ -z "$WEBSITE_SHA256" ]; then
+            if [ "${{ inputs.skip_website_check }}" = "true" ]; then
+              echo "::warning::Could not extract SHA256 from kryfo.app/download, but skip_website_check is active."
+            else
+              echo "::error::Version $VERSION is not yet published with a verified checksum on https://kryfo.app/download. Halting to ensure release is intended for users."
+              exit 1
+            fi
+          else
+            echo "Kryfo Website SHA256  : $WEBSITE_SHA256"
+            
+            echo "=== 3. Cross-validating checksums (Dual-source consensus) ==="
+            if [ "$GITHUB_SHA256" != "$WEBSITE_SHA256" ]; then
+              echo "::error::CRITICAL INTEGRITY FAILURE: Checksum mismatch between GitHub and kryfo.app!"
+              echo "  GitHub Releases : $GITHUB_SHA256"
+              echo "  kryfo.app       : $WEBSITE_SHA256"
+              exit 1
+            fi
+            echo "Dual verification successful: Checksums from GitHub and kryfo.app match 100%!"
+          fi
+
+          SHA256="$GITHUB_SHA256"
 
           # Update PKGBUILD
           sed -i "s|^pkgver=.*|pkgver=${VERSION}|" PKGBUILD

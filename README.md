@@ -34,14 +34,13 @@ paru -S kryfo-bin
 
 ---
 
-## Automated Updates & Integrity Checks
+## Automated Updates & Dual-Source Verification
 
-This repository is monitored by a [GitHub Actions workflow](.github/workflows/update-aur.yml) with multiple integrity gates:
+This repository is monitored by a [GitHub Actions workflow](.github/workflows/update-aur.yml) with rigorous integrity checks:
 1. Polls upstream releases on [GnosiWorks/Kryfo](https://github.com/GnosiWorks/Kryfo) every 6 hours.
-2. Cross-references the version against [kryfo.app/download](https://kryfo.app/download) to confirm the release is live and intended for end users.
-3. Retrieves and strictly verifies the Linux tarball checksum against the official `SHA256SUMS-linux` file published by upstream (fails immediately if unverified).
-4. Updates `PKGBUILD` and regenerates `.SRCINFO` in an Arch Linux container.
-5. Deploys to AUR with environment protection / review checks.
+2. **Dual-source checksum verification:** Fetches the SHA-256 hash from both the GitHub Release (`SHA256SUMS-linux`) **and** the official Kryfo web server ([kryfo.app/download](https://kryfo.app/download)), requiring 100% consensus before updating.
+3. Updates `PKGBUILD` and regenerates `.SRCINFO` in a clean Arch Linux container.
+4. Pushes changes to this repository and synchronizes with the AUR under protected environment review.
 
 ---
 
