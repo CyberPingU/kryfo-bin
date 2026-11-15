@@ -5,10 +5,20 @@ on:
     # Run every 6 hours
     - cron: '0 */6 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
+    inputs:
+      skip_website_check:
+        description: 'Skip kryfo.app/download verification (override)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   check-and-update:
     runs-on: ubuntu-latest
+    outputs:
+      new_release: ${{ steps.check_release.outputs.new_release }}
+      version: ${{ steps.check_release.outputs.version }}
+      tag: ${{ steps.check_release.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,23 +44,41 @@ jobs:
             echo "new_release=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Fetch checksum and update PKGBUILD
+      - name: Verify release on kryfo.app/download
+        if: steps.check_release.outputs.new_release == 'true' && !inputs.skip_website_check
+        run: |
+          VERSION="${{ steps.check_release.outputs.version }}"
+          echo "Checking if version $VERSION is published on https://kryfo.app/download..."
+          DOWNLOAD_PAGE=$(curl -sSL https://kryfo.app/download)
+
+          if ! echo "$DOWNLOAD_PAGE" | grep -q "kryfo-${VERSION}-beta-linux-x64.tar.gz"; then
+            echo "::error::Version $VERSION is tagged on GitHub but not yet published on https://kryfo.app/download. Halting to ensure release is intended for users."
+            exit 1
+          fi
+          echo "Version $VERSION verified on kryfo.app/download."
+
+      - name: Fetch and verify SHA256SUMS-linux
         if: steps.check_release.outputs.new_release == 'true'
         run: |
           VERSION="${{ steps.check_release.outputs.version }}"
           TAG="${{ steps.check_release.outputs.tag }}"
           
-          # Download SHA256SUMS-linux directly from the release
           SUMS_URL="https://github.com/GnosiWorks/Kryfo/releases/download/${TAG}/SHA256SUMS-linux"
-          SHA256=$(curl -sSL "$SUMS_URL" | grep "kryfo-.*-linux-x64.tar.gz" | awk '{print $1}')
-
-          if [ -z "$SHA256" ]; then
-            echo "Could not fetch SHA256 from $SUMS_URL, calculating from tarball..."
-            TARBALL_URL="https://github.com/GnosiWorks/Kryfo/releases/download/${TAG}/kryfo-${VERSION}-beta-linux-x64.tar.gz"
-            SHA256=$(curl -sSL "$TARBALL_URL" | sha256sum | awk '{print $1}')
+          echo "Fetching SHA256SUMS-linux from $SUMS_URL..."
+          
+          CHECKSUMS_CONTENT=$(curl -sSL -f "$SUMS_URL" || true)
+          if [ -z "$CHECKSUMS_CONTENT" ]; then
+            echo "::error::Could not download SHA256SUMS-linux from $SUMS_URL. Failing build as required."
+            exit 1
           fi
 
-          echo "New SHA256: $SHA256"
+          SHA256=$(echo "$CHECKSUMS_CONTENT" | grep "kryfo-.*-linux-x64.tar.gz" | awk '{print $1}')
+          if [ -z "$SHA256" ]; then
+            echo "::error::SHA256SUMS-linux does not contain checksum for linux-x64 tarball! Refusing to proceed with unverified hash."
+            exit 1
+          fi
+
+          echo "Verified official SHA256: $SHA256"
 
           # Update PKGBUILD
           sed -i "s|^pkgver=.*|pkgver=${VERSION}|" PKGBUILD
@@ -60,7 +88,6 @@ jobs:
       - name: Regenerate .SRCINFO using Arch container
         if: steps.check_release.outputs.new_release == 'true'
         run: |
-          # Use archlinux docker container to run makepkg --printsrcinfo
           docker run --rm -v "$(pwd):/pkg" -w /pkg archlinux:latest bash -c \
             "pacman -Syu --noconfirm pacman && useradd -m build && chown -R build . && su build -c 'makepkg --printsrcinfo' > .SRCINFO"
 
@@ -73,8 +100,21 @@ jobs:
           git commit -m "chore: bump kryfo-bin to ${{ steps.check_release.outputs.version }}"
           git push
 
+  publish-aur:
+    name: Publish to AUR
+    needs: check-and-update
+    if: needs.check-and-update.outputs.new_release == 'true'
+    environment:
+      name: aur-production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
       - name: Publish to AUR
-        if: steps.check_release.outputs.new_release == 'true' && env.AUR_KEY != ''
+        if: env.AUR_KEY != ''
         env:
           AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
@@ -89,5 +129,5 @@ jobs:
           git config user.name "CyberPingU"
           git config user.email "cyberpingu@tuta.io"
           GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git add PKGBUILD .SRCINFO
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git commit -m "Update to ${{ steps.check_release.outputs.version }}" || true
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git commit -m "Update to ${{ needs.check-and-update.outputs.version }}" || true
           GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git push origin master

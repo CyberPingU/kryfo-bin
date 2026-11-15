@@ -1,5 +1,5 @@
 pkgbase = kryfo-bin
-	pkgdesc = Private, Tor-based messenger without phone numbers or metadata (binary release)
+	pkgdesc = Private messenger over Tor, no phone number or account (binary release)
 	pkgver = 0.6.2
 	pkgrel = 1
 	url = https://kryfo.app
@@ -11,7 +11,6 @@ pkgbase = kryfo-bin
 	depends = xdg-desktop-portal
 	depends = gst-plugins-base
 	depends = gst-plugins-good
-	optdepends = tor: optional standalone daemon, Kryfo bundles its own engine by default
 	provides = kryfo
 	conflicts = kryfo
 	source = https://github.com/GnosiWorks/Kryfo/releases/download/v0.6.2/kryfo-0.6.2-beta-linux-x64.tar.gz

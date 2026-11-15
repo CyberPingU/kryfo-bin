@@ -4,7 +4,7 @@ _pkgname=kryfo
 pkgver=0.6.2
 _pkgtag="${pkgver}-beta"
 pkgrel=1
-pkgdesc="Private, Tor-based messenger without phone numbers or metadata (binary release)"
+pkgdesc="Private messenger over Tor, no phone number or account (binary release)"
 arch=('x86_64')
 url="https://kryfo.app"
 license=('GPL-3.0-or-later')
@@ -15,9 +15,6 @@ depends=(
     'xdg-desktop-portal'
     'gst-plugins-base'
     'gst-plugins-good'
-)
-optdepends=(
-    'tor: optional standalone daemon, Kryfo bundles its own engine by default'
 )
 provides=('kryfo')
 conflicts=('kryfo')

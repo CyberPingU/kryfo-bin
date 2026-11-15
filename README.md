@@ -4,7 +4,7 @@
 [![AUR version](https://img.shields.io/aur/version/kryfo-bin.svg?color=blue)](https://aur.archlinux.org/packages/kryfo-bin)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-green.svg)](LICENSE)
 
-Arch Linux (AUR) package for [**Kryfo Desktop**](https://kryfo.app) — a private, anonymous messenger running over Tor onion services without phone numbers, emails, or metadata.
+Arch Linux (AUR) package for [**Kryfo Desktop**](https://kryfo.app) — Private messenger over Tor, no phone number or account.
 
 Upstream repository: [GnosiWorks/Kryfo](https://github.com/GnosiWorks/Kryfo)
 
@@ -34,20 +34,22 @@ paru -S kryfo-bin
 
 ---
 
-## Automated Updates
+## Automated Updates & Integrity Checks
 
-This repository is monitored by a [GitHub Actions workflow](.github/workflows/update-aur.yml) that:
+This repository is monitored by a [GitHub Actions workflow](.github/workflows/update-aur.yml) with multiple integrity gates:
 1. Polls upstream releases on [GnosiWorks/Kryfo](https://github.com/GnosiWorks/Kryfo) every 6 hours.
-2. Extracts new release tags, downloads the official Linux release tarball and verifies its SHA-256 checksum against `SHA256SUMS-linux`.
-3. Updates `PKGBUILD` and regenerates `.SRCINFO` in a clean Arch Linux container.
-4. Pushes updates to this GitHub repository and synchronizes with the AUR.
+2. Cross-references the version against [kryfo.app/download](https://kryfo.app/download) to confirm the release is live and intended for end users.
+3. Retrieves and strictly verifies the Linux tarball checksum against the official `SHA256SUMS-linux` file published by upstream (fails immediately if unverified).
+4. Updates `PKGBUILD` and regenerates `.SRCINFO` in an Arch Linux container.
+5. Deploys to AUR with environment protection / review checks.
 
 ---
 
-## Security & Privacy
+## Security & Permissions
 
-* Binaries are packaged directly from official reproducible releases signed and published by the Kryfo developers.
+* Binaries are packaged directly from official releases published by the Kryfo developers.
 * Application files are installed in `/opt/kryfo/` and run under standard unprivileged user permissions.
+* The Linux application has Tor built in and manages its own onion services directly.
 * User databases, encryption keys, and secrets reside exclusively in `$HOME/.local/share/kryfo/` with user-only permissions (`0700`).
 
 ---
