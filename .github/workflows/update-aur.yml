@@ -71,7 +71,7 @@ jobs:
           try:
               html = urllib.request.urlopen("https://kryfo.app/download", timeout=15).read().decode("utf-8")
               version = sys.argv[1]
-              pattern = rf"kryfo-{re.escape(version)}[^\"]*linux-x64\.tar\.gz.*?<code>([a-fA-F0-9]{{64}})</code>"
+              pattern = rf"kryfo-{re.escape(version)}[^\"]*linux-x64\.tar\.gz.*?([a-fA-F0-9]{{64}})"
               m = re.search(pattern, html, re.DOTALL)
               if m:
                   print(m.group(1).lower())
