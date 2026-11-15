@@ -1,0 +1,93 @@
+name: Check and Update AUR package
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check latest Kryfo release
+        id: check_release
+        run: |
+          LATEST_JSON=$(curl -sSL https://api.github.com/repos/GnosiWorks/Kryfo/releases/latest)
+          TAG=$(echo "$LATEST_JSON" | grep -Po '"tag_name": "\K[^"]*')
+          # Tag format is v0.6.2 -> strip 'v'
+          VERSION=${TAG#v}
+
+          CURRENT_VERSION=$(grep -Po '^pkgver=\K.*' PKGBUILD)
+
+          echo "Latest upstream version: $VERSION"
+          echo "Current PKGBUILD version: $CURRENT_VERSION"
+
+          if [ "$VERSION" != "$CURRENT_VERSION" ]; then
+            echo "new_release=true" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          else
+            echo "new_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch checksum and update PKGBUILD
+        if: steps.check_release.outputs.new_release == 'true'
+        run: |
+          VERSION="${{ steps.check_release.outputs.version }}"
+          TAG="${{ steps.check_release.outputs.tag }}"
+          
+          # Download SHA256SUMS-linux directly from the release
+          SUMS_URL="https://github.com/GnosiWorks/Kryfo/releases/download/${TAG}/SHA256SUMS-linux"
+          SHA256=$(curl -sSL "$SUMS_URL" | grep "kryfo-.*-linux-x64.tar.gz" | awk '{print $1}')
+
+          if [ -z "$SHA256" ]; then
+            echo "Could not fetch SHA256 from $SUMS_URL, calculating from tarball..."
+            TARBALL_URL="https://github.com/GnosiWorks/Kryfo/releases/download/${TAG}/kryfo-${VERSION}-beta-linux-x64.tar.gz"
+            SHA256=$(curl -sSL "$TARBALL_URL" | sha256sum | awk '{print $1}')
+          fi
+
+          echo "New SHA256: $SHA256"
+
+          # Update PKGBUILD
+          sed -i "s|^pkgver=.*|pkgver=${VERSION}|" PKGBUILD
+          sed -i "s|^pkgrel=.*|pkgrel=1|" PKGBUILD
+          sed -i "s|^sha256sums=.*|sha256sums=('${SHA256}')|" PKGBUILD
+
+      - name: Regenerate .SRCINFO using Arch container
+        if: steps.check_release.outputs.new_release == 'true'
+        run: |
+          # Use archlinux docker container to run makepkg --printsrcinfo
+          docker run --rm -v "$(pwd):/pkg" -w /pkg archlinux:latest bash -c \
+            "pacman -Syu --noconfirm pacman && useradd -m build && chown -R build . && su build -c 'makepkg --printsrcinfo' > .SRCINFO"
+
+      - name: Commit and push changes to GitHub
+        if: steps.check_release.outputs.new_release == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git commit -m "chore: bump kryfo-bin to ${{ steps.check_release.outputs.version }}"
+          git push
+
+      - name: Publish to AUR
+        if: steps.check_release.outputs.new_release == 'true' && env.AUR_KEY != ''
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur_key
+          chmod 600 ~/.ssh/aur_key
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
+
+          git clone ssh://aur@aur.archlinux.org/kryfo-bin.git /tmp/aur-kryfo
+          cp PKGBUILD .SRCINFO /tmp/aur-kryfo/
+          cd /tmp/aur-kryfo
+          git config user.name "CyberPingU"
+          git config user.email "cyberpingu@tuta.io"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git add PKGBUILD .SRCINFO
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git commit -m "Update to ${{ steps.check_release.outputs.version }}" || true
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key" git push origin master
