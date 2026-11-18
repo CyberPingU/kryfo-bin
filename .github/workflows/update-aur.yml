@@ -15,6 +15,8 @@ on:
 jobs:
   check-and-update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       new_release: ${{ steps.check_release.outputs.new_release }}
       version: ${{ steps.check_release.outputs.version }}
@@ -25,9 +27,20 @@ jobs:
 
       - name: Check latest Kryfo release
         id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_JSON=$(curl -sSL https://api.github.com/repos/GnosiWorks/Kryfo/releases/latest)
-          TAG=$(echo "$LATEST_JSON" | grep -Po '"tag_name": "\K[^"]*')
+          LATEST_JSON=$(gh api repos/GnosiWorks/Kryfo/releases/latest 2>&1) || {
+            echo "::error::Errore durante la chiamata alle API GitHub: $LATEST_JSON"
+            exit 1
+          }
+
+          TAG=$(echo "$LATEST_JSON" | jq -r '.tag_name // empty')
+          if [ -z "$TAG" ]; then
+            echo "::error::Tag non trovato nella risposta dell'API: $LATEST_JSON"
+            exit 1
+          fi
+
           # Tag format is v0.6.2 -> strip 'v'
           VERSION=${TAG#v}
 
