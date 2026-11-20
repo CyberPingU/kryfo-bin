@@ -144,6 +144,8 @@ jobs:
     environment:
       name: aur-production
     runs-on: ubuntu-latest
+    env:
+      AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -152,8 +154,6 @@ jobs:
 
       - name: Publish to AUR
         if: env.AUR_KEY != ''
-        env:
-          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur_key
