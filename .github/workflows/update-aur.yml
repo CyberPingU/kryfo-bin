@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Check latest Kryfo release
         id: check_release
@@ -122,17 +124,18 @@ jobs:
       - name: Regenerate .SRCINFO using Arch container
         if: steps.check_release.outputs.new_release == 'true'
         run: |
-          docker run --rm -v "$(pwd):/pkg" -w /pkg archlinux:latest bash -c \
-            "pacman -Syu --noconfirm pacman && useradd -m build && chown -R build . && su build -c 'makepkg --printsrcinfo' > .SRCINFO"
+          docker run --rm -v "$(pwd):/pkg:ro" archlinux:latest bash -c \
+            "useradd -m build && cp /pkg/PKGBUILD /tmp/PKGBUILD && cd /tmp && su build -c 'makepkg --printsrcinfo'" > .SRCINFO
 
       - name: Commit and push changes to GitHub
         if: steps.check_release.outputs.new_release == 'true'
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO
           git commit -m "chore: bump kryfo-bin to ${{ steps.check_release.outputs.version }}"
-          git push
+          git push origin HEAD:main
 
   publish-aur:
     name: Publish to AUR
