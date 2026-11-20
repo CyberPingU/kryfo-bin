@@ -1,7 +1,7 @@
 # Maintainer: CyberPingU <cyberpingu@tuta.io>
 pkgname=kryfo-bin
 _pkgname=kryfo
-pkgver=0.6.2
+pkgver=0.6.3
 _pkgtag="${pkgver}-beta"
 pkgrel=1
 pkgdesc="Private messenger over Tor, no phone number or account (binary release)"
@@ -19,7 +19,7 @@ depends=(
 provides=('kryfo')
 conflicts=('kryfo')
 source=("https://github.com/GnosiWorks/Kryfo/releases/download/v${pkgver}/kryfo-${_pkgtag}-linux-x64.tar.gz")
-sha256sums=('b127d137d9749422eb8529897d64aef6412619fa697fe802b5f44fb0ae111a78')
+sha256sums=('38c5272feaf89c3e3a7cb32baf75cee9347ead98329cbbfcb826ec39b8507224')
 
 package() {
     cd "kryfo-${_pkgtag}-linux-x64"
